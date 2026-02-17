@@ -1,0 +1,1656 @@
+import 'dart:math';
+import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import 'donation_screen.dart';
+
+// Calm Islamic UI palette (UPDATED TO MATCH REF IMAGE)
+const Color kQuizBackground = Color(0xFFE5F9F6); // Main Page Start
+const Color kQuizBackgroundEnd = Color(0xFFD0F0EB); // Main Page End
+const Color kQuizAccent = Color(0xFF00ACAF); // Vibrant Teal (Ref Image)
+const Color kQuizAccentLight = Color(0xFFE0F2F1); // Light Teal background for icons
+const Color kQuizAppBarDark = Color(0xFF00796B); // Deep Teal (Ref Image)
+const Color kQuizCard = Colors.white;
+const Color kQuizText = Color(0xFF00796B); // Deep Teal for titles
+const Color kQuizTextBody = Color(0xFF546E7A); // Greyish for body text
+const Color kQuizTextMuted = Color(0xFF546E7A); // Map to body text
+const Color kQuizMuted = Color(0xFFB0BEC5); // Light Grey for Locked status (Ref Image)
+
+class QuizPalette {
+  final Color background;
+  final Color appBar;
+  final Color card;
+  final Color accent;
+  final Color muted;
+  final Color text;
+  final Color textMuted;
+  final List<BoxShadow> softShadows;
+
+  const QuizPalette({
+    required this.background,
+    required this.appBar,
+    required this.card,
+    required this.accent,
+    required this.muted,
+    required this.text,
+    required this.textMuted,
+    required this.softShadows,
+  });
+
+  static QuizPalette of(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    if (isDark) {
+      return const QuizPalette(
+        background: Color(0xFF0B1220), // Deep Dark Blue
+        appBar: Colors.transparent,
+        card: Color(0xFF1E293B), // Dark Slate
+        accent: Color(0xFF26A69A), // Cyan/Teal Accent
+        muted: Colors.white54,
+        text: Colors.white,
+        textMuted: Colors.white70,
+        softShadows: [], // No shadows in dark mode for flatter look
+      );
+    }
+
+    return const QuizPalette(
+      background: kQuizBackground,
+      appBar: Colors.transparent,
+      card: Colors.white,
+      accent: kQuizAccent,
+      muted: kQuizMuted,
+      text: kQuizText,
+      textMuted: kQuizTextBody,
+      softShadows: [
+        BoxShadow(
+          color: Color(0x0D000000),
+          blurRadius: 10,
+          offset: Offset(0, 4),
+        ),
+      ],
+    );
+  }
+}
+
+const List<BoxShadow> kSoftShadows = [
+  BoxShadow(
+    color: Color(0x1400897B),
+    blurRadius: 16,
+    offset: Offset(0, 10),
+  ),
+];
+
+class QuizLevelScreen extends StatefulWidget {
+  const QuizLevelScreen({super.key});
+
+  @override
+  State<QuizLevelScreen> createState() => _QuizLevelScreenState();
+}
+
+class _QuizLevelScreenState extends State<QuizLevelScreen> with SingleTickerProviderStateMixin {
+  List<bool> _unlockedLevels = List.generate(15, (index) => index == 0); // 15 levels, first unlocked
+  List<int> _levelStars = List.generate(15, (index) => 0); // Star ratings for each level
+  
+  late AnimationController _bobbingController;
+  bool _shouldAnimateToProgress = false;
+
+  String _userName = '';
+
+  final List<String> _levelIcons = [
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852616/1n_upugkm.svg', // Level 1
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852629/2n_1_xsuoq8.svg', // Level 2
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852614/3n_bb4cqt.svg', // Level 3
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852602/4n_jlrjb1.svg', // Level 4
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852597/5n_eflsl3.svg', // Level 5
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852685/6n_xngkyz.svg', // Level 6
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852689/7n_noxeae.svg', // Level 7
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852673/8n_hfwvmq.svg', // Level 8
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852685/9n_as9jfu.svg', // Level 9
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852689/10n_ri4zl5.svg', // Level 10
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852710/11n_ispz5v.svg', // Level 11
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765853828/12n_f8qtau.svg', // Level 12
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852685/13n_xexe1r.svg', // Level 13
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852771/14n_x4wxsk.svg', // Level 14
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852770/15n_azolhz.svg', // Level 15
+  ];
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadUnlockedLevels();
+    
+    // Initialize bobbing animation
+    _bobbingController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat(reverse: true);
+    
+    // Trigger slow slide animation after a brief delay
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          setState(() {
+            _shouldAnimateToProgress = true;
+          });
+        }
+      });
+    });
+    
+    // Don't load username here - will be loaded when needed
+  }
+  
+  // Load unlocked levels from local storage
+  Future<void> _loadUnlockedLevels() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      for (int i = 0; i < 15; i++) {
+        _unlockedLevels[i] = prefs.getBool('level_$i') ?? (i == 0); // Level 1 is always unlocked
+        _levelStars[i] = prefs.getInt('level_${i}_stars') ?? 0;
+      }
+    });
+  }
+  
+  // Load user name from local storage
+  Future<void> _loadUserName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final name = prefs.getString('user_name');
+    if (name == null || name.isEmpty) {
+      // Show dialog to get user name - only when quiz is clicked
+      _showUserNameDialog();
+    } else {
+      setState(() {
+        _userName = name;
+      });
+    }
+  }
+  
+  // Save user name to local storage
+  Future<void> _saveUserName(String name) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_name', name);
+    setState(() {
+      _userName = name;
+    });
+  }
+  
+  // Save unlocked levels to local storage
+  Future<void> _saveUnlockedLevels() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (int i = 0; i < 15; i++) {
+      await prefs.setBool('level_$i', _unlockedLevels[i]);
+      await prefs.setInt('level_${i}_stars', _levelStars[i]);
+    }
+  }
+  
+  // Save star rating for a level
+  Future<void> _saveLevelStars(int levelIndex, int stars) async {
+    setState(() {
+      _levelStars[levelIndex] = stars;
+    });
+    await _saveUnlockedLevels();
+  }
+  
+  @override
+  void dispose() {
+    _bobbingController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = QuizPalette.of(context); // Use the palette
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Scaffold(
+      backgroundColor: p.background, // Use palette background
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        title: Column(
+          children: [
+            Text(
+              'ISLAMIC QUIZ',
+              style: GoogleFonts.outfit(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.0,
+                color: p.text, // Use palette text
+              ),
+            ),
+            Text(
+              'Sharpen your Iman',
+              style: GoogleFonts.outfit(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: p.textMuted, // Use palette muted text
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(40.0), // Height for the bicycle track
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Calculate progress: (Unlocked Levels - 1) / (Total Levels - 1)
+                // We subtract 1 because Level 1 is effectively "0 progress" visually at start
+                final unlockedCount = _unlockedLevels.where((l) => l).length;
+                final totalLevels = _unlockedLevels.length;
+                final progress = (unlockedCount - 1) / (totalLevels - 1);
+                
+                // Ensure progress is within 0.0 to 1.0
+                final safeProgress = progress.clamp(0.0, 1.0);
+                
+                  final trackWidth = constraints.maxWidth;
+                // Subtract icon width to keep it inside bounds
+                final maxTravel = trackWidth - 30; 
+                
+                // If animation hasn't started yet, position is 0. Otherwise, it's the actual progress.
+                final targetPosition = _shouldAnimateToProgress ? (maxTravel * safeProgress) : 0.0;
+
+                return SizedBox(
+                  height: 30, 
+                  child: Stack(
+                    alignment: Alignment.centerLeft,
+                    clipBehavior: Clip.none,
+                    children: [
+                      // 1. The Track Line
+                      Container(
+                        width: double.infinity,
+                        height: 2,
+                        decoration: BoxDecoration(
+                          color: p.muted.withOpacity(0.3),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      
+                      // 2. The Finish Line Flag
+                      Positioned(
+                        right: 0,
+                        top: -8, // Adjust to center vertically relative to line
+                        child: Icon(
+                          Icons.flag_outlined,
+                          color: isDark ? Colors.white : Colors.black45,
+                          size: 28,
+                        ),
+                      ),
+                      
+                      // 3. The Moving Bicycle with Bobbing Animation
+                      AnimatedPositioned(
+                        duration: const Duration(seconds: 3), // Slow, premium movement
+                        curve: Curves.easeOutQuart, // Smooth deceleration
+                        left: targetPosition,
+                        top: -10, // Base top position
+                        onEnd: () {
+                          // Stop bobbing when movement finishes
+                          _bobbingController.stop();
+                          // Reset to 0 offset to ensure it lands flat
+                          _bobbingController.animateTo(0, duration: const Duration(milliseconds: 200));
+                        },
+                        child: AnimatedBuilder(
+                          animation: _bobbingController,
+                          builder: (context, child) {
+                            return Transform.translate(
+                              offset: Offset(0, _bobbingController.value * -2.0), // Bob up by 2 pixels
+                              child: child,
+                            );
+                          },
+                          child: Icon(
+                            Icons.pedal_bike_rounded, 
+                            color: isDark ? Colors.white : Colors.black45,
+                            size: 28,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: p.accent, size: 28), // Use palette accent
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
+        child: ListView.builder(
+          physics: const BouncingScrollPhysics(),
+          itemCount: 15,
+          itemBuilder: (context, index) {
+            final levelNumber = index + 1;
+            final isUnlocked = _unlockedLevels[index];
+            final stars = _levelStars[index];
+
+            return _buildQuabanStyleLevelRow(levelNumber, isUnlocked, stars);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuabanStyleLevelRow(int levelNumber, bool isUnlocked, int stars) {
+    final p = QuizPalette.of(context); // Use palette
+    final isCompleted = stars > 0;
+    final statusText = isUnlocked ? 'Unlocked' : 'Locked';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20.0),
+      child: GestureDetector(
+        onTap: isUnlocked ? () => _startQuiz(levelNumber) : null,
+        child: Container(
+          padding: const EdgeInsets.all(20.0),
+          decoration: BoxDecoration(
+            color: p.card, // Use palette card color
+            borderRadius: BorderRadius.circular(30),
+            boxShadow: p.softShadows, // Use palette shadows
+            border: Theme.of(context).brightness == Brightness.dark 
+               ? Border.all(color: Colors.white.withOpacity(0.05)) 
+               : null,
+          ),
+          child: Row(
+            children: [
+              // Level number circle (Left Side)
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isUnlocked ? p.accent : p.muted.withOpacity(0.3),
+                    width: 2.5,
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    '$levelNumber',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: isUnlocked ? p.accent : p.muted,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 20),
+              // Level info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Level $levelNumber',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: isUnlocked ? p.text : p.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      statusText,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: p.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Right side: Lock, Icon (if completed), or Ready Button
+              if (!isUnlocked)
+                Icon(
+                  Icons.lock_outline_rounded,
+                  color: p.muted,
+                  size: 32,
+                )
+              else if (isCompleted)
+                // Show Level Icon after completion
+                SvgPicture.network(
+                  _levelIcons[levelNumber - 1],
+                  width: 40,
+                  height: 40,
+                  placeholderBuilder: (BuildContext context) => Icon(
+                    Icons.check_circle_outline,
+                    color: p.accent,
+                    size: 32,
+                  ),
+                )
+              else
+                // Unlocked but not completed: Show Ready Button
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: p.accent,
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: const Text(
+                    'Ready',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _startQuiz(int levelNumber) async {
+    // Load username before starting quiz
+    if (_userName.isEmpty) {
+      await _loadUserName();
+      // Wait for dialog to complete if shown
+      if (_userName.isEmpty) {
+        return; // Don't start quiz if name dialog was cancelled
+      }
+    }
+    
+    if (mounted) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => QuizScreen(
+            levelNumber: levelNumber,
+            userName: _userName,
+            onQuizCompleted: (score) async {
+              await _handleQuizCompletion(levelNumber, score);
+            },
+          ),
+        ),
+      );
+      
+      // Reload unlocked levels when returning from quiz
+      // This ensures the UI reflects any newly unlocked levels
+      await _loadUnlockedLevels();
+    }
+  }
+
+  Future<void> _handleQuizCompletion(int levelNumber, int score) async {
+    // Calculate stars based on score (out of 10 questions)
+    int earnedStars = 0;
+    if (score >= 9) earnedStars = 5;
+    else if (score >= 7) earnedStars = 4;
+    else if (score >= 5) earnedStars = 3;
+    else if (score >= 3) earnedStars = 2;
+    else if (score >= 1) earnedStars = 1;
+    
+    // Save stars for current level
+    await _saveLevelStars(levelNumber - 1, earnedStars);
+    
+    // Check if score meets requirement (9 out of 10) to unlock next level
+    if (score >= 9 && levelNumber < 15) {
+      setState(() {
+        // Unlock the NEXT level
+        _unlockedLevels[levelNumber] = true;
+      });
+      
+      // Save to local storage
+      await _saveUnlockedLevels();
+    }
+  }
+
+  // Achievements display removed
+  
+  // Show dialog to get user name
+  void _showUserNameDialog() {
+    final TextEditingController nameController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: kQuizCard,
+          child: Container(
+            padding: const EdgeInsets.all(25),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: kQuizAccent.withOpacity(0.25),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.person,
+                  size: 50,
+                  color: kQuizAccent,
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Apka Naam Kya Hai?',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                    color: kQuizAccent,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Quiz mein aapka swagat karne ke liye',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: kQuizTextMuted,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: nameController,
+                  autofocus: true,
+                  style: const TextStyle(color: kQuizText),
+                  decoration: InputDecoration(
+                    hintText: 'Apna naam likhen',
+                    hintStyle: const TextStyle(color: kQuizTextMuted),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: kQuizAccent.withOpacity(0.25),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: kQuizAccent.withOpacity(0.25),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: kQuizAccent,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      if (nameController.text.trim().isNotEmpty) {
+                        _saveUserName(nameController.text.trim());
+                        Navigator.pop(context);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kQuizAccent,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      'Shuru Karein',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showDonationDialog() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const DonationScreen()),
+    );
+  }
+}
+
+class QuizScreen extends StatefulWidget {
+  final int levelNumber;
+  final String userName;
+  final Future<void> Function(int) onQuizCompleted;
+
+  const QuizScreen({
+    super.key,
+    required this.levelNumber,
+    required this.userName,
+    required this.onQuizCompleted,
+  });
+
+  @override
+  State<QuizScreen> createState() => _QuizScreenState();
+}
+
+class _QuizScreenState extends State<QuizScreen> {
+  int _currentQuestionIndex = 0;
+  int _score = 0;
+  int? _selectedAnswer;
+  late List<Map<String, dynamic>> _questions;
+  List<int?> _userAnswers = []; // Track user's answers for each question
+  
+  // All 150 Islamic quiz questions in Roman Urdu
+  final List<Map<String, dynamic>> _allQuestions = [
+    {'question': 'Islam ke bunyadi arkaan kitne hain?', 'options': ['3', '4', '5', '6'], 'correct': 2},
+    {'question': 'Islam ka pehla rukun kya hai?', 'options': ['Namaz', 'Roza', 'Kalma', 'Zakat'], 'correct': 2},
+    {'question': 'Kalma-e-Tayyaba ka matlab kya hai?', 'options': ['Namaz ka farz hona', 'Allah ek hai aur Muhammad ﷺ Rasool hain', 'Quran ka hukum', 'Jannat ka raasta'], 'correct': 1},
+    {'question': 'Quran kis zaban mein nazil hua?', 'options': ['Urdu', 'Farsi', 'Arabic', 'Hebrew'], 'correct': 2},
+    {'question': 'Quran-e-Pak mein total surah kitni hain?', 'options': ['112', '113', '114', '115'], 'correct': 2},
+    {'question': 'Quran-e-Pak ki pehli Surah ka naam kya hai?', 'options': ['Al-Baqarah', 'Al-Fatihah', 'Al-Ikhlas', 'An-Nas'], 'correct': 1},
+    {'question': 'Quran-e-Pak ki aakhri Surah ka naam kya hai?', 'options': ['Al-Falaq', 'Al-Kausar', 'An-Nas', 'Al-Asr'], 'correct': 2},
+    {'question': 'Namaz din mein kitni farz hain?', 'options': ['3', '4', '5', '6'], 'correct': 2},
+    {'question': 'Fajr namaz mein farz kitne hote hain?', 'options': ['4', '2', '3', '5'], 'correct': 1},
+    {'question': 'Islam mein sab se pehla farz kya hua?', 'options': ['Roza', 'Zakat', 'Namaz', 'Kalma'], 'correct': 3},
+    {'question': 'Roza kis mahine mein farz hai?', 'options': ['Muharram', 'Rajab', 'Ramzan', 'Shawwal'], 'correct': 2},
+    {'question': 'Zakat kis par farz hoti hai?', 'options': ['Har insan par', 'Ghareeb par', 'Sahib-e-Nisab par', 'Bachon par'], 'correct': 2},
+    {'question': 'Hajj kis shehar mein hota hai?', 'options': ['Madina', 'Makkah', 'Taif', 'Jerusalem'], 'correct': 1},
+    {'question': 'Hajj kis mahine mein hota hai?', 'options': ['Ramzan', 'Zil Hijjah', 'Shawwal', 'Safar'], 'correct': 1},
+    {'question': 'Islam ka pehla Qibla kya tha?', 'options': ['Masjid-e-Haram', 'Masjid-e-Nabawi', 'Masjid-e-Aqsa', 'Kaaba'], 'correct': 2},
+    {'question': 'Nabi ﷺ ka naam kya tha?', 'options': ['Ahmad', 'Muhammad', 'Mustafa', 'Sab sahi'], 'correct': 3},
+    {'question': 'Nabi ﷺ par pehli wahi kis ghaar mein nazil hui?', 'options': ['Ghaar-e-Saur', 'Ghaar-e-Hira', 'Ghaar-e-Thor', 'Ghaar-e-Noor'], 'correct': 1},
+    {'question': 'Pehli wahi mein kaunsi ayat nazil hui?', 'options': ['Alhamdulillah', 'Qul huwallah', 'Iqra', 'Subhanallah'], 'correct': 2},
+    {'question': 'Nabi ﷺ ke walid ka naam kya tha?', 'options': ['Abdullah', 'Abu Talib', 'Abdul Muttalib', 'Hamza'], 'correct': 0},
+    {'question': 'Nabi ﷺ ki walida ka naam kya tha?', 'options': ['Aisha', 'Fatima', 'Amina', 'Halima'], 'correct': 2},
+    {'question': 'Islam mein pehla mard jo iman laya?', 'options': ['Umar (RA)', 'Ali (RA)', 'Abu Bakr (RA)', 'Usman (RA)'], 'correct': 2},
+    {'question': 'Islam mein pehli aurat jo iman laye?', 'options': ['Aisha (RA)', 'Fatima (RA)', 'Khadija (RA)', 'Hafsa (RA)'], 'correct': 2},
+    {'question': 'Quran-e-Pak mein sajde wali ayatein kitni hain?', 'options': ['10', '12', '14', '15'], 'correct': 2},
+    {'question': 'Shab-e-Qadr kis mahine mein hoti hai?', 'options': ['Rajab', 'Ramzan', 'Shawwal', 'Muharram'], 'correct': 1},
+    {'question': 'Islam ka matlab kya hai?', 'options': ['Aman', 'Ibadat', 'Farz', 'Jihad'], 'correct': 0},
+    {'question': 'Iman ke arkaan kitne hain?', 'options': ['4', '5', '6', '7'], 'correct': 2},
+    {'question': 'Farishte kis cheez se banaye gaye?', 'options': ['Mitti', 'Noor', 'Aag', 'Pani'], 'correct': 1},
+    {'question': 'Insan kis cheez se banaya gaya?', 'options': ['Noor', 'Aag', 'Mitti', 'Pani'], 'correct': 2},
+    {'question': 'Jinn kis cheez se banaye gaye?', 'options': ['Noor', 'Mitti', 'Aag', 'Pani'], 'correct': 2},
+    {'question': 'Islam mein haram cheez ka matlab kya hai?', 'options': ['Pasandeeda', 'Jaiz', 'Mana ki hui', 'Sunnat'], 'correct': 2},
+    {'question': 'Namaz ka pehla rukun kya hai?', 'options': ['Ruku', 'Sajda', 'Qayam', 'Takbeer-e-Tehreema'], 'correct': 3},
+    {'question': 'Quran ko jama kis daur mein kiya gaya?', 'options': ['Nabi ﷺ ke zindagi mein', 'Abu Bakr (RA) ke daur mein', 'Umar (RA) ke daur mein', 'Usman (RA) ke daur mein'], 'correct': 1},
+    {'question': 'Quran ke para kitne hain?', 'options': ['28', '29', '30', '31'], 'correct': 2},
+    {'question': 'Jannat mein jaane ka asal zariya kya hai?', 'options': ['Amaal', 'Allah ki rehmat', 'Zakat', 'Roza'], 'correct': 1},
+    {'question': 'Sab se afzal ibadat kaunsi hai?', 'options': ['Roza', 'Zakat', 'Namaz', 'Hajj'], 'correct': 2},
+    {'question': 'Islam mein jhoot bolna?', 'options': ['Jaiz', 'Mustahab', 'Haram', 'Farz'], 'correct': 2},
+    {'question': 'Nabi ﷺ ka laqab kya tha?', 'options': ['Al-Ameen', 'Al-Kareem', 'Al-Hakim', 'Al-Qadir'], 'correct': 0},
+    {'question': 'Quran kis par nazil hua?', 'options': ['Musa (AS)', 'Isa (AS)', 'Muhammad ﷺ', 'Ibrahim (AS)'], 'correct': 2},
+    {'question': 'Sab se chhoti Surah kaunsi hai?', 'options': ['Al-Asr', 'Al-Ikhlas', 'Al-Kausar', 'Al-Falaq'], 'correct': 2},
+    {'question': 'Wuzu kis cheez ke liye zaroori hai?', 'options': ['Roza', 'Namaz', 'Zakat', 'Hajj'], 'correct': 1},
+    {'question': 'Azan ka matlab kya hai?', 'options': ['Dua', 'Iqamat', 'Namaz ki pukar', 'Khutba'], 'correct': 2},
+    {'question': 'Juma ki namaz kis din hoti hai?', 'options': ['Thursday', 'Friday', 'Saturday', 'Sunday'], 'correct': 1},
+    {'question': 'Islam mein sab se bada gunah kya hai?', 'options': ['Jhoot', 'Chori', 'Shirk', 'Ghibat'], 'correct': 2},
+    {'question': 'Quran kis cheez ka zariya hai?', 'options': ['Kahani', 'Hidayat', 'Science', 'History'], 'correct': 1},
+    {'question': 'Nabi ﷺ ki hijrat kahan se kahan hui?', 'options': ['Makkah se Taif', 'Taif se Madina', 'Makkah se Madina', 'Madina se Makkah'], 'correct': 2},
+    {'question': 'Hijri calendar kis waqia se shuru hota hai?', 'options': ['Wahi', 'Hijrat', 'Badr', 'Fatah Makkah'], 'correct': 1},
+    {'question': 'Islam mein sab se afzal din kaunsa hai?', 'options': ['Monday', 'Tuesday', 'Friday', 'Sunday'], 'correct': 2},
+    {'question': 'Jannat ke darwaze kitne hain?', 'options': ['6', '7', '8', '9'], 'correct': 2},
+    {'question': 'Jahannum ke darwaze kitne hain?', 'options': ['5', '6', '7', '8'], 'correct': 2},
+    {'question': 'Islam mein ilm hasil karna?', 'options': ['Sunnat', 'Nafl', 'Farz', 'Mustahab'], 'correct': 2},
+    {'question': 'Quran-e-Pak Allah ka ______ hai.', 'options': ['Qanoon', 'Kalam', 'Hukum', 'Paigham'], 'correct': 1},
+    {'question': 'Nabi ﷺ ki wafat kis shehar mein hui?', 'options': ['Makkah', 'Taif', 'Madina', 'Badr'], 'correct': 2},
+    {'question': 'Masjid-e-Nabawi kis shehar mein hai?', 'options': ['Makkah', 'Madina', 'Jerusalem', 'Taif'], 'correct': 1},
+    {'question': 'Islam mein sab se pehla qatl kis ne kiya?', 'options': ['Qabil', 'Habil', 'Adam (AS)', 'Iblees'], 'correct': 0},
+    {'question': 'Sab se pehla Nabi kaun the?', 'options': ['Ibrahim (AS)', 'Adam (AS)', 'Nuh (AS)', 'Musa (AS)'], 'correct': 1},
+    {'question': 'Sab se aakhri Nabi kaun hain?', 'options': ['Isa (AS)', 'Musa (AS)', 'Muhammad ﷺ', 'Ibrahim (AS)'], 'correct': 2},
+    {'question': 'Quran ka hifz karne wale ko kya kehte hain?', 'options': ['Qari', 'Hafiz', 'Aalim', 'Mufti'], 'correct': 1},
+    {'question': 'Roza kis waqt se kis waqt tak hota hai?', 'options': ['Subah se shaam', 'Sehri se iftar', 'Fajr se Maghrib', 'Sunrise se sunset'], 'correct': 2},
+    {'question': 'Sehri khana kis waqt hota hai?', 'options': ['Maghrib ke baad', 'Isha ke baad', 'Fajr se pehle', 'Subah 10 baje'], 'correct': 2},
+    {'question': 'Iftar kis waqt hota hai?', 'options': ['Asr ke baad', 'Maghrib ke waqt', 'Isha ke baad', 'Fajr ke waqt'], 'correct': 1},
+    {'question': 'Islam mein sab se behtar sadqa kya hai?', 'options': ['Paisa', 'Kapde', 'Pani pilana', 'Khana dena'], 'correct': 2},
+    {'question': 'Quran ka tarjuma kis zaban mein allowed hai?', 'options': ['Sirf Arabic', 'Sirf Urdu', 'Har zaban', 'English nahi'], 'correct': 2},
+    {'question': 'Islam mein maa ka darja kya hai?', 'options': ['Walid se kam', 'Barabar', 'Teen guna zyada', 'Sirf farz'], 'correct': 2},
+    {'question': 'Walidain ki khidmat Islam mein?', 'options': ['Sunnat', 'Nafl', 'Farz', 'Jaiz'], 'correct': 2},
+    {'question': 'Nabi ﷺ ki pehli biwi ka naam?', 'options': ['Aisha (RA)', 'Hafsa (RA)', 'Khadija (RA)', 'Fatima (RA)'], 'correct': 2},
+    {'question': 'Nabi ﷺ ke kitne bete the?', 'options': ['1', '2', '3', '4'], 'correct': 2},
+    {'question': 'Quran mein total ayatein kitni hain?', 'options': ['6000', '6200', '6236', '6500'], 'correct': 2},
+    {'question': 'Nabi ﷺ ka daur kis sadi mein tha?', 'options': ['5th', '6th', '7th', '8th'], 'correct': 2},
+    {'question': 'Islam mein salam ka jawab dena?', 'options': ['Sunnat', 'Nafl', 'Farz', 'Haram'], 'correct': 2},
+    {'question': 'Salam ka matlab kya hai?', 'options': ['Khushi', 'Aman', 'Dua', 'Mohabbat'], 'correct': 1},
+    {'question': 'Quran-e-Pak ko samajhne ke liye kya zaroori hai?', 'options': ['Arabic ilm', 'Tafseer', 'Dono', 'Sirf tarjuma'], 'correct': 2},
+    {'question': 'Tafseer ka matlab kya hai?', 'options': ['Tarjuma', 'Samjhana', 'Yaad karna', 'Parhna'], 'correct': 1},
+    {'question': 'Hadith kya hoti hai?', 'options': ['Quran ki ayat', 'Nabi ﷺ ke aqwal aur afaal', 'Sahabi ka bayan', 'Dua'], 'correct': 1},
+    {'question': 'Hadith ka sab se mashhoor kitab?', 'options': ['Sahih Bukhari', 'Tafseer Ibn Kathir', 'Riyaz-us-Saliheen', 'Musnad Ahmad'], 'correct': 0},
+    {'question': 'Islam mein ghibat ka matlab?', 'options': ['Jhoot', 'Chori', 'Peeth peeche burai', 'Mazak'], 'correct': 2},
+    {'question': 'Islam mein tauba ka matlab?', 'options': ['Saza', 'Gunah', 'Maafi mangna', 'Dua'], 'correct': 2},
+    {'question': 'Allah ki sab se pasandeeda cheez?', 'options': ['Maal', 'Tauba', 'Qurbani', 'Zakat'], 'correct': 1},
+    {'question': 'Islam mein niyyat ka kya maqam hai?', 'options': ['Zaroori nahi', 'Sunnat', 'Aamal ki bunyaad', 'Sirf namaz ke liye'], 'correct': 2},
+    {'question': 'Nabi ﷺ ka akhlaq kaisa tha?', 'options': ['Sakht', 'Beparwah', 'Behtareen', 'Aam'], 'correct': 2},
+    {'question': 'Islam mein sab se behtar insaan kaun?', 'options': ['Zyada maal wala', 'Zyada ibadat wala', 'Behtareen akhlaq wala', 'Zyada ilm wala'], 'correct': 2},
+    {'question': 'Quran ka nuzool kitne saalon mein hua?', 'options': ['10', '15', '20', '23'], 'correct': 3},
+    {'question': 'Islam mein musafir ki namaz?', 'options': ['Poori', 'Qasar', 'Nafl', 'Maaf'], 'correct': 1},
+    {'question': 'Qasar namaz mein farz kitne ho jaate hain?', 'options': ['4', '3', '2', '1'], 'correct': 2},
+    {'question': 'Islam mein sab se behtar din?', 'options': ['Eid', 'Juma', 'Ashura', 'Shab-e-Barat'], 'correct': 1},
+    {'question': 'Islam mein sab se pehli masjid?', 'options': ['Masjid-e-Haram', 'Masjid-e-Nabawi', 'Masjid-e-Quba', 'Masjid-e-Aqsa'], 'correct': 2},
+    {'question': 'Masjid-e-Quba kahan hai?', 'options': ['Makkah', 'Madina', 'Taif', 'Jerusalem'], 'correct': 1},
+    {'question': 'Islam mein halal ka matlab?', 'options': ['Mana ki hui', 'Jaiz', 'Mushkil', 'Farz'], 'correct': 1},
+    {'question': 'Islam mein haram ka matlab?', 'options': ['Pasandeeda', 'Jaiz', 'Mana ki hui', 'Sunnat'], 'correct': 2},
+    {'question': 'Quran ka paigham kya hai?', 'options': ['Science', 'History', 'Hidayat', 'Kahani'], 'correct': 2},
+    {'question': 'Islam mein sab se bada haq kis ka hai?', 'options': ['Dost', 'Padosi', 'Walidain', 'Teacher'], 'correct': 2},
+    {'question': 'Padosi ka haq Islam mein?', 'options': ['Nafl', 'Sunnat', 'Farz', 'Jaiz'], 'correct': 2},
+    {'question': 'Islam mein mehmaan ka kya darja hai?', 'options': ['Aam', 'Bojh', 'Izzat', 'Mana'], 'correct': 2},
+    {'question': 'Islam mein jhoot bolna kab jaiz hota hai?', 'options': ['Hamesha', 'Kabhi nahi', '3 khaas surat mein', 'Sirf mazak mein'], 'correct': 2},
+    {'question': 'Quran kis din nazil hona shuru hua?', 'options': ['Juma', 'Peer', 'Jumeraat', 'Itwaar'], 'correct': 1},
+    {'question': 'Islam mein sab se afzal sadqa?', 'options': ['Zakat', 'Nafl sadqa', 'Chhupa hua sadqa', 'Eid sadqa'], 'correct': 2},
+    {'question': 'Nabi ﷺ ka asal shehar?', 'options': ['Madina', 'Taif', 'Makkah', 'Badr'], 'correct': 2},
+    {'question': 'Islam mein ilm hasil karna?', 'options': ['Nafl', 'Sunnat', 'Farz', 'Jaiz'], 'correct': 2},
+    {'question': 'Quran ki tilawat ka sawab?', 'options': ['Harf par ek neki', 'Har lafz par ek neki', 'Har harf par 10 neki', 'Sirf samajhne par'], 'correct': 2},
+    {'question': 'Islam mein sab se pasandeeda naam?', 'options': ['Abdullah', 'Muhammad', 'Dono', 'Koi bhi'], 'correct': 2},
+    {'question': 'Islam ka final maqsad kya hai?', 'options': ['Daulat', 'Taaqat', 'Allah ki raza', 'Shohrat'], 'correct': 2},
+    {'question': 'Iman ka pehla rukun kya hai?', 'options': ['Rasool par iman', 'Kitaabon par iman', 'Allah par iman', 'Farishton par iman'], 'correct': 2},
+    {'question': 'Iman ka doosra rukun kya hai?', 'options': ['Qayamat par iman', 'Farishton par iman', 'Rasoolon par iman', 'Taqdeer par iman'], 'correct': 1},
+    {'question': 'Iman ke total arkaan kitne hain?', 'options': ['4', '5', '6', '7'], 'correct': 2},
+    {'question': 'Quran kis Nabi par nazil hua?', 'options': ['Musa (AS)', 'Isa (AS)', 'Muhammad ﷺ', 'Ibrahim (AS)'], 'correct': 2},
+    {'question': 'Taurat kis Nabi par nazil hui?', 'options': ['Ibrahim (AS)', 'Musa (AS)', 'Isa (AS)', 'Nuh (AS)'], 'correct': 1},
+    {'question': 'Injeel kis Nabi par nazil hui?', 'options': ['Musa (AS)', 'Dawood (AS)', 'Isa (AS)', 'Sulaiman (AS)'], 'correct': 2},
+    {'question': 'Zaboor kis Nabi par nazil hui?', 'options': ['Musa (AS)', 'Isa (AS)', 'Dawood (AS)', 'Ibrahim (AS)'], 'correct': 2},
+    {'question': 'Nabi ﷺ ki hijrat ka saal kya kehlata hai?', 'options': ['Miladi saal', 'Hijri saal', 'Qamari saal', 'Islami saal'], 'correct': 1},
+    {'question': 'Hijrat kis shehar se hui?', 'options': ['Madina', 'Taif', 'Makkah', 'Badr'], 'correct': 2},
+    {'question': 'Hijrat kis shehar ki taraf hui?', 'options': ['Taif', 'Jerusalem', 'Madina', 'Najran'], 'correct': 2},
+    {'question': 'Islam mein sab se pehli jang ka naam?', 'options': ['Uhud', 'Khandaq', 'Badr', 'Hunain'], 'correct': 2},
+    {'question': 'Jang-e-Badr kis hijri saal mein hui?', 'options': ['1 Hijri', '2 Hijri', '3 Hijri', '4 Hijri'], 'correct': 1},
+    {'question': 'Jang-e-Uhud kis hijri saal mein hui?', 'options': ['2 Hijri', '3 Hijri', '4 Hijri', '5 Hijri'], 'correct': 1},
+    {'question': 'Jang-e-Khandaq kis hijri saal mein hui?', 'options': ['3 Hijri', '4 Hijri', '5 Hijri', '6 Hijri'], 'correct': 2},
+    {'question': 'Quran mein pehli nazil hone wali poori surah?', 'options': ['Al-Alaq', 'Al-Fatihah', 'Al-Muddassir', 'Al-Asr'], 'correct': 1},
+    {'question': 'Islam mein sab se pehla muazzin kaun tha?', 'options': ['Abdullah bin Masood (RA)', 'Abu Bakr (RA)', 'Bilal (RA)', 'Umar (RA)'], 'correct': 2},
+    {'question': 'Nabi ﷺ ke kitne chacha the? (Mashhoor riwayat)', 'options': ['8', '9', '10', '12'], 'correct': 3},
+    {'question': 'Islam mein janwar ziba karne ka tareeqa kya kehlata hai?', 'options': ['Halal', 'Zabiha', 'Qurbani', 'Sadqa'], 'correct': 1},
+    {'question': 'Qurbani kis Nabi ki sunnat hai?', 'options': ['Musa (AS)', 'Isa (AS)', 'Ibrahim (AS)', 'Nuh (AS)'], 'correct': 2},
+    {'question': 'Islam mein sab se bada zulm kya hai?', 'options': ['Chori', 'Jhoot', 'Shirk', 'Ghibat'], 'correct': 2},
+    {'question': 'Quran mein kitne sajde hain? (common view)', 'options': ['12', '13', '14', '15'], 'correct': 2},
+    {'question': 'Islam mein wuzu ke farz kitne hain?', 'options': ['3', '4', '5', '6'], 'correct': 1},
+    {'question': 'Tayammum kab jaiz hota hai?', 'options': ['Pani mehnga ho', 'Pani na mile ya bimari ho', 'Raat ke waqt', 'Safar mein'], 'correct': 1},
+    {'question': 'Islam mein sab se pehli masjid jo bani?', 'options': ['Masjid-e-Haram', 'Masjid-e-Nabawi', 'Masjid-e-Quba', 'Masjid-e-Aqsa'], 'correct': 2},
+    {'question': 'Quran kis cheez ki kitaab hai?', 'options': ['Qanoon', 'Science', 'Hidayat', 'History'], 'correct': 2},
+    {'question': 'Islam mein sab se afzal amal?', 'options': ['Zakat', 'Namaz waqt par', 'Roza', 'Hajj'], 'correct': 1},
+    {'question': 'Islam mein jannat kis cheez ke neeche hai?', 'options': ['Walid ke', 'Ustad ke', 'Maa ke', 'Bhai ke'], 'correct': 2},
+    {'question': 'Nabi ﷺ ka asal nasb kis se milta hai?', 'options': ['Nabi Musa (AS)', 'Nabi Ibrahim (AS)', 'Nabi Isa (AS)', 'Nabi Nuh (AS)'], 'correct': 1},
+    {'question': 'Quran kis tarah nazil hua?', 'options': ['Ek baar', 'Hissa hissa', 'Sapne mein', 'Likha hua'], 'correct': 1},
+    {'question': 'Islam mein har amal ka daromadar kis par hai?', 'options': ['Amal', 'Log', 'Niyat', 'Ilm'], 'correct': 2},
+    {'question': 'Nabi ﷺ ne farmaya: sab se taqatwar kaun?', 'options': ['Zyada maal wala', 'Zyada ladne wala', 'Gussa qaboo karne wala', 'Zyada ilm wala'], 'correct': 2},
+    {'question': 'Islam mein burai ka jawab?', 'options': ['Burai se', 'Gusse se', 'Achhai se', 'Khamoshi se'], 'correct': 2},
+    {'question': 'Quran ka ek naam "Noor" ka matlab?', 'options': ['Roshan', 'Kitaab', 'Rehmat', 'Ilm'], 'correct': 0},
+    {'question': 'Islam mein sab se pasandeeda rang?', 'options': ['Kala', 'Laal', 'Hara', 'Peela'], 'correct': 2},
+    {'question': 'Islam mein sab se afzal dua?', 'options': ['Maghfirat ki dua', 'Hidayat ki dua', 'Aakhirat ki dua', 'Sab'], 'correct': 3},
+    {'question': 'Nabi ﷺ ka pasandeeda libas?', 'options': ['Mehnat wala', 'Saaf sutra', 'Mehnga', 'Rangeen'], 'correct': 1},
+    {'question': 'Quran ki hifazat ka zimma kis ne liya?', 'options': ['Ulama', 'Sahaba', 'Allah', 'Nabi ﷺ'], 'correct': 2},
+    {'question': 'Islam mein sab se pehla haq?', 'options': ['Padosi ka', 'Walidain ka', 'Allah ka', 'Dost ka'], 'correct': 2},
+    {'question': 'Nabi ﷺ ka ummati kaun kehlata hai?', 'options': ['Jo dekha ho', 'Jo saath raha ho', 'Jo iman laya ho', 'Jo madina gaya ho'], 'correct': 2},
+    {'question': 'Islam mein duniya ki misaal kis se di gayi?', 'options': ['Saaya', 'Pani', 'Safar', 'Khel'], 'correct': 0},
+    {'question': 'Quran par amal karna?', 'options': ['Sunnat', 'Nafl', 'Farz', 'Jaiz'], 'correct': 2},
+    {'question': 'Islam mein jhoot ka anjaam?', 'options': ['Kamyabi', 'Barkat', 'Gunah', 'Sawab'], 'correct': 2},
+    {'question': 'Nabi ﷺ ne farmaya: Behtar amal?', 'options': ['Zyada aur mushkil', 'Thoda magar lagataar', 'Sirf farz', 'Sirf nafl'], 'correct': 1},
+    {'question': 'Quran ki tilawat kis haalat mein behtar?', 'options': ['Let kar', 'Khare ho kar', 'Taharat ke sath', 'Bagair wuzu'], 'correct': 2},
+    {'question': 'Islam mein musalman ki pehchan?', 'options': ['Libas', 'Zabaan', 'Akhlaq', 'Daulat'], 'correct': 2},
+    {'question': 'Quran ka maqsad?', 'options': ['Parhna', 'Yaad karna', 'Amal karna', 'Likhna'], 'correct': 2},
+    {'question': 'Islam mein achha dost ka asar?', 'options': ['Farq nahi', 'Bura hota hai', 'Achha hota hai', 'Gunah hota hai'], 'correct': 2},
+    {'question': 'Nabi ﷺ ka paigham kis ke liye tha?', 'options': ['Sirf Arab', 'Sirf Musalman', 'Sirf Sahabi', 'Puri insaniyat'], 'correct': 3},
+    {'question': 'Quran mein sab se zyada use hone wala lafz?', 'options': ['Allah', 'Rahman', 'Rabb', 'Ilm'], 'correct': 0},
+    {'question': 'Islam mein kamyabi ka raasta?', 'options': ['Daulat', 'Taqwa', 'Shohrat', 'Taaqat'], 'correct': 1},
+  ];
+  
+  @override
+  void initState() {
+    super.initState();
+    // Assign fixed 10 questions per level (Level 1: Q1-10, Level 2: Q11-20, etc.)
+    int startIndex = (widget.levelNumber - 1) * 10;
+    int endIndex = startIndex + 10;
+    _questions = _allQuestions.sublist(startIndex, endIndex);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = QuizPalette.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              isDark ? const Color(0xFF0B1220) : kQuizBackground,
+              isDark ? const Color(0xFF0F172A) : kQuizBackgroundEnd,
+            ],
+          ),
+        ),
+        child: Stack(
+          children: [
+            // Sparkle effect
+            Positioned.fill(
+              child: CustomPaint(
+                painter: SparklePainter(),
+              ),
+            ),
+            Scaffold(
+              backgroundColor: Colors.transparent,
+              appBar: AppBar(
+                title: Column(
+                  children: [
+                    Text(
+                      'ISLAMIC QUIZ',
+                      style: GoogleFonts.outfit(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white70,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    Text(
+                      'Level ${widget.levelNumber}',
+                      style: GoogleFonts.outfit(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: kQuizAccent,
+                elevation: 0,
+                centerTitle: true,
+                leading: IconButton(
+                  icon: const Icon(
+                    Icons.arrow_back,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+              body: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  children: [
+                    // Progress bar
+                    Container(
+                      width: double.infinity,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: p.card,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: (_currentQuestionIndex + 1) / _questions.length,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: kQuizAccent,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    Text(
+                      'Question ${_currentQuestionIndex + 1} of ${_questions.length}',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: p.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Question card
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: p.card,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: p.accent.withOpacity(0.25),
+                          width: 1,
+                        ),
+                        boxShadow: p.softShadows,
+                      ),
+                      child: Text(
+                        _questions[_currentQuestionIndex]['question'],
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: p.text,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Answer options
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: 4,
+                        itemBuilder: (context, index) {
+                          final option =
+                              _questions[_currentQuestionIndex]['options'][index];
+                          final isSelected = _selectedAnswer == index;
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _selectedAnswer = index;
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(18),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? p.accent : p.card,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? p.accent
+                                        : p.accent.withOpacity(0.25),
+                                    width: 2,
+                                  ),
+                                  boxShadow: p.softShadows,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 30,
+                                      height: 30,
+                                      decoration: BoxDecoration(
+                                        color: isSelected ? Colors.white : kQuizAccent,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          String.fromCharCode(65 + index),
+                                          style: TextStyle(
+                                            color: isSelected ? kQuizAccent : Colors.white,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 15),
+                                    Expanded(
+                                      child: Text(
+                                        option,
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          color: isSelected ? Colors.white : p.text,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+
+                    if (_selectedAnswer != null)
+                      Container(
+                        width: double.infinity,
+                        height: 50,
+                        margin: const EdgeInsets.only(top: 20),
+                        child: ElevatedButton(
+                          onPressed: _nextQuestion,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: kQuizAccent,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(25),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: Text(
+                            _currentQuestionIndex == _questions.length - 1
+                                ? 'Finish Quiz'
+                                : 'Next Question',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _nextQuestion() {
+    // Store user's answer
+    _userAnswers.add(_selectedAnswer);
+    
+    if (_selectedAnswer == _questions[_currentQuestionIndex]['correct']) {
+      setState(() {
+        _score++;
+      });
+    }
+    
+    if (_currentQuestionIndex < _questions.length - 1) {
+      setState(() {
+        _currentQuestionIndex++;
+        _selectedAnswer = null;
+      });
+    } else {
+      _showResults();
+    }
+  }
+
+  void _showResults() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => QuizResultScreen(
+          score: _score,
+          totalQuestions: _questions.length,
+          levelNumber: widget.levelNumber,
+          userName: widget.userName,
+          onQuizCompleted: widget.onQuizCompleted,
+          questions: _questions,
+          userAnswers: _userAnswers,
+        ),
+      ),
+    );
+  }
+}
+
+class QuizResultScreen extends StatelessWidget {
+  final int score;
+  final int totalQuestions;
+  final int levelNumber;
+  final String userName;
+  final Future<void> Function(int) onQuizCompleted;
+  final List<Map<String, dynamic>> questions;
+  final List<int?> userAnswers;
+
+  const QuizResultScreen({
+    super.key,
+    required this.score,
+    required this.totalQuestions,
+    required this.levelNumber,
+    required this.userName,
+    required this.onQuizCompleted,
+    required this.questions,
+    required this.userAnswers,
+  });
+  
+  // Level icons for badges
+  static const List<String> _levelIcons = [
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852616/1n_upugkm.svg',
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852629/2n_1_xsuoq8.svg',
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852614/3n_bb4cqt.svg',
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852602/4n_jlrjb1.svg',
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852597/5n_eflsl3.svg',
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852685/6n_xngkyz.svg',
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852689/7n_noxeae.svg',
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852673/8n_hfwvmq.svg',
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852685/9n_as9jfu.svg',
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852689/10n_ri4zl5.svg',
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852710/11n_ispz5v.svg',
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765853828/12n_f8qtau.svg',
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852685/13n_xexe1r.svg',
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852771/14n_x4wxsk.svg',
+    'https://res.cloudinary.com/dxghbizrv/image/upload/v1765852770/15n_azolhz.svg',
+  ];
+  
+  // Get personalized Roman Urdu appreciation message
+  String _getAppreciationMessage(bool isExcellent) {
+    final List<String> excellentMessages = [
+      'Mashallah $userName! Aap bohot acha kar rahe hain!',
+      'Zabardast $userName! Aapka ilm bohot acha hai!',
+      'Bahut khub $userName! Allah aapko aur ilm de!',
+      'Bohot ache $userName! Aap kamyab ho rahe hain!',
+      'Shandar $userName! Aapki mehnat rang la rahi hai!',
+    ];
+    
+    final List<String> encouragementMessages = [
+      '$userName, koshish karte rahein! Aap zaroor kamyab honge!',
+      '$userName, himmat rakhein! Aap behtar kar sakte hain!',
+      '$userName, practice se sab mumkin hai!',
+      '$userName, haar na manein! Agli baar zaroor!',
+      '$userName, mehnat karte rahein! Kamyabi aapki hai!',
+    ];
+    
+    final messages = isExcellent ? excellentMessages : encouragementMessages;
+    final index = levelNumber % messages.length;
+    return messages[index];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = QuizPalette.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isExcellent = score >= 9;
+    
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text(
+          'Quiz Results',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        backgroundColor: kQuizAccent,
+        elevation: 0,
+        centerTitle: true,
+        automaticallyImplyLeading: false,
+      ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              isDark ? const Color(0xFF0B1220) : kQuizBackground,
+              isDark ? const Color(0xFF0F172A) : kQuizBackground,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              const SizedBox(height: 20),
+              
+              // 1. Top Icon (Full size, centered, no padding)
+              Center(
+                child: isExcellent
+                    ? SizedBox(
+                        width: 140,
+                        height: 140,
+                        child: SvgPicture.network(
+                          _levelIcons[levelNumber - 1],
+                          fit: BoxFit.contain,
+                          placeholderBuilder: (BuildContext context) => const Icon(
+                            Icons.star,
+                            size: 80,
+                            color: Colors.white,
+                          ),
+                        ),
+                      )
+                    : Icon(
+                        Icons.refresh,
+                        size: 90,
+                        color: isDark ? Colors.white70 : Colors.black45,
+                      ),
+              ),
+              
+              const SizedBox(height: 10),
+
+              // 2. Score
+              Text(
+                '$score / $totalQuestions',
+                style: TextStyle(
+                  fontSize: 36,
+                  fontWeight: FontWeight.w800,
+                  color: p.text,
+                ),
+              ),
+              
+              const SizedBox(height: 15),
+
+              // 3. Answer Review Section (Takes available space)
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: p.card,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: p.accent.withOpacity(0.15),
+                      width: 1,
+                    ),
+                    boxShadow: p.softShadows,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10, left: 4),
+                        child: Text(
+                          'Jawabat Ka Jaiza',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: p.text,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView.builder(
+                          physics: const BouncingScrollPhysics(),
+                          itemCount: questions.length,
+                          padding: EdgeInsets.zero,
+                          itemBuilder: (context, index) {
+                            final question = questions[index];
+                            final userAnswer = userAnswers[index];
+                            final correctAnswer = question['correct'] as int;
+                            final isCorrect = userAnswer == correctAnswer;
+                            final options = question['options'] as List<dynamic>;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: isDark 
+                                    ? const Color(0xFF1A2332)
+                                    : Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: isCorrect 
+                                      ? Colors.green.withOpacity(0.3)
+                                      : Colors.red.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Question number and status (Compact)
+                                  Row(
+                                    children: [
+                                      Text(
+                                        '${index + 1}. ',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: p.textMuted,
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          question['question'] as String,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: p.text,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Icon(
+                                        isCorrect ? Icons.check_circle : Icons.cancel,
+                                        color: isCorrect ? Colors.green : Colors.red,
+                                        size: 18,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  
+                                  // User's answer
+                                  if (userAnswer != null)
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          isCorrect ? Icons.check : Icons.close,
+                                          color: isCorrect ? Colors.green : Colors.red,
+                                          size: 14,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            'Aap: ${options[userAnswer]}',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: isCorrect ? Colors.green.shade700 : Colors.red.shade700,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  
+                                  // Correct answer (only if wrong)
+                                  if (!isCorrect) 
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.lightbulb_outline,
+                                            color: Colors.green.shade700,
+                                            size: 14,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              'Sahi: ${options[correctAnswer]}',
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                color: Colors.green.shade700,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 15),
+
+              // 4. Appreciation & Buttons (Bottom Section)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  children: [
+                    // Appreciation Card (Compact)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: p.card,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: p.accent.withOpacity(0.15),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: p.accent.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            isExcellent ? '🎉 Mubarak Ho!' : '💪 Koshish Jari Rakhein!',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: isExcellent ? p.accent : p.text,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _getAppreciationMessage(isExcellent),
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: p.text,
+                              height: 1.3,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 12),
+
+                    // Buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: p.card,
+                              foregroundColor: p.text,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(25),
+                                side: BorderSide(
+                                  color: p.textMuted.withOpacity(0.25),
+                                ),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            child: const Text(
+                              'Levels',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              await onQuizCompleted(score);
+                              if (context.mounted) {
+                                if (isExcellent && levelNumber < 15) {
+                                  Navigator.of(context).pushReplacement(
+                                    MaterialPageRoute(
+                                      builder: (_) => QuizScreen(
+                                        levelNumber: levelNumber + 1,
+                                        userName: userName,
+                                        onQuizCompleted: onQuizCompleted,
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  Navigator.of(context).pushReplacement(
+                                    MaterialPageRoute(
+                                      builder: (_) => QuizScreen(
+                                        levelNumber: levelNumber,
+                                        userName: userName,
+                                        onQuizCompleted: onQuizCompleted,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: p.accent,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(25),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            child: Text(
+                              isExcellent && levelNumber < 15
+                                  ? 'Next Level'
+                                  : 'Retry',
+                              style: const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+// Islamic geometric pattern painter for background
+class IslamicPatternPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = kQuizAccent.withOpacity(0.08)
+      ..strokeWidth = 0.8
+      ..style = PaintingStyle.stroke;
+
+    const patternSize = 80.0;
+    for (double x = 0; x < size.width; x += patternSize) {
+      for (double y = 0; y < size.height; y += patternSize) {
+        _drawStarPattern(canvas, paint, Offset(x, y), patternSize / 2.2);
+      }
+    }
+  }
+
+  void _drawStarPattern(Canvas canvas, Paint paint, Offset center, double radius) {
+    final path = Path();
+    const points = 8;
+    final angleStep = (pi * 2) / points;
+
+    for (int i = 0; i < points; i++) {
+      final angle = i * angleStep;
+      final x = center.dx + radius * cos(angle);
+      final y = center.dy + radius * sin(angle);
+      
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    path.close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class SparklePainter extends CustomPainter {
+  final List<Offset> sparkles = List.generate(
+    100,
+    (index) => Offset(Random().nextDouble(), Random().nextDouble()),
+  );
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.white;
+    final random = Random(42); // Stable seed
+
+    for (int i = 0; i < 60; i++) {
+      final dx = random.nextDouble() * size.width;
+      final dy = random.nextDouble() * size.height;
+      final radius = random.nextDouble() * 1.5 + 0.5;
+      final opacity = random.nextDouble() * 0.4 + 0.1;
+      
+      paint.color = Colors.white.withValues(alpha: opacity);
+      canvas.drawCircle(Offset(dx, dy), radius, paint);
+
+      // Add a cross effect for larger "stars"
+      if (random.nextDouble() > 0.8) {
+        final crossPaint = Paint()
+          ..color = Colors.white.withValues(alpha: opacity * 0.5)
+          ..strokeWidth = 0.5;
+        final length = radius * 3;
+        canvas.drawLine(Offset(dx - length, dy), Offset(dx + length, dy), crossPaint);
+        canvas.drawLine(Offset(dx, dy - length), Offset(dx, dy + length), crossPaint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// Circular progress painter for Quaban-style progress indicator
+class CircularProgressPainter extends CustomPainter {
+  final double progress;
+  final Color backgroundColor;
+  final Color progressColor;
+
+  CircularProgressPainter({
+    required this.progress,
+    required this.backgroundColor,
+    required this.progressColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+
+    // Background circle
+    final backgroundPaint = Paint()
+      ..color = backgroundColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 8;
+
+    canvas.drawCircle(center, radius - 4, backgroundPaint);
+
+    // Progress arc
+    final progressPaint = Paint()
+      ..shader = SweepGradient(
+        colors: [
+          progressColor,
+          progressColor.withOpacity(0.6),
+          progressColor,
+        ],
+        startAngle: 0,
+        endAngle: 3.14159 * 2,
+      ).createShader(Rect.fromCircle(center: center, radius: radius))
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 8
+      ..strokeCap = StrokeCap.round;
+
+    const startAngle = -3.14159 / 2; // Start from top
+    final sweepAngle = 2 * 3.14159 * progress;
+
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius - 4),
+      startAngle,
+      sweepAngle,
+      false,
+      progressPaint,
+    );
+
+    // Glow effect
+    if (progress > 0) {
+      final glowPaint = Paint()
+        ..color = progressColor.withOpacity(0.3)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 12
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius - 4),
+        startAngle,
+        sweepAngle,
+        false,
+        glowPaint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(CircularProgressPainter oldDelegate) {
+    return oldDelegate.progress != progress;
+  }
+}
+
+
